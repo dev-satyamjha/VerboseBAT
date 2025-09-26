@@ -1,0 +1,58 @@
+name: Package and Release VerboseBAT with Admin Rights
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install and Import PS2EXE module
+        shell: powershell
+        run: |
+          Install-Module -Name PS2EXE -Force -AllowClobber
+          Import-Module PS2EXE
+
+      - name: Package PowerShell script into EXE
+        shell: powershell
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $exeName = "VerboseBAT-$tag.exe"
+
+          ps2exe -InputFile VerboseBAT.ps1 -OutputFile $exeName -iconFile VerboseBAT.ico -requireAdmin
+        id: package
+
+      - name: Upload packaged EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: "VerboseBAT-${{ github.ref_name }}"
+          path: "VerboseBAT-${{ github.ref_name }}.exe"
+
+      - name: Create Draft Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          draft: true
+          prerelease: false
+
+      - name: Upload EXE to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: "VerboseBAT-${{ github.ref_name }}.exe"
+          asset_name: "VerboseBAT-${{ github.ref_name }}.exe"
+          asset_content_type: application/octet-stream
