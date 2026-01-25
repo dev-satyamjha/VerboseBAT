@@ -44,18 +44,27 @@ function Get-BatteryRate {
 
 while ($true) {
     $battInfo = Get-WmiObject -Namespace "root\wmi" -Class "BatteryStatus" -ErrorAction SilentlyContinue
-    if (-not $battInfo) {
+    $battery = Get-WmiObject -Class Win32_Battery -ErrorAction SilentlyContinue
+
+    if (-not $battInfo -or -not $battery) {
         Write-Host "Battery WMI data not available."
         Start-Sleep -Seconds 5
         continue
     }
 
+    $voltage = "N/A"
+    if ($battInfo.Voltage -gt 0) {
+        $voltage = ([math]::Round($battInfo.Voltage / 1000, 2)).ToString() + " V"
+    }
+
+    $batteryPercent = $battery.EstimatedChargeRemaining
+
     if ($battInfo.PowerOnline) {
         $rate = Get-BatteryRate -RateType "Charge"
-        Write-Host "Charging Rate: $rate"
+        Write-Host "Status: Charging | Charging Rate: $rate | Voltage: $voltage | Battery: $batteryPercent%"
     } else {
         $rate = Get-BatteryRate -RateType "Discharge"
-        Write-Host "Discharging Rate: $rate"
+        Write-Host "Status: On Battery | Discharging Rate: $rate | Voltage: $voltage | Battery: $batteryPercent%"
     }
 
     Start-Sleep -Seconds 5
