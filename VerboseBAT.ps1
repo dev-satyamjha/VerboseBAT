@@ -32,7 +32,9 @@ function Get-BatteryRate {
                     $source = "Perf Counter"
                 }
             }
-        } catch { }
+        } catch {
+
+        }
     }
 
     if ($rateValue -gt 0) {
@@ -43,13 +45,23 @@ function Get-BatteryRate {
 }
 
 while ($true) {
-    $battInfo = Get-WmiObject -Namespace "root\wmi" -Class "BatteryStatus" -ErrorAction SilentlyContinue
     $battery = Get-WmiObject -Class Win32_Battery -ErrorAction SilentlyContinue
+    $battInfo = Get-WmiObject -Namespace "root\wmi" -Class "BatteryStatus" -ErrorAction SilentlyContinue
+    $fullChargeObj = Get-WmiObject -Namespace "root\wmi" -Class "BatteryFullChargedCapacity" -ErrorAction SilentlyContinue
+    $staticData = Get-WmiObject -Namespace "root\wmi" -Class "BatteryStaticData" -ErrorAction SilentlyContinue
 
-    if (-not $battInfo -or -not $battery) {
-        Write-Host "Battery WMI data not available."
+    if (-not $battInfo -or -not $fullChargeObj -or -not $staticData) {
+        Write-Host "Battery WMI data not fully available. Please check battery status."
         Start-Sleep -Seconds 5
         continue
+    }
+
+    $batteryPercent = $battery.EstimatedChargeRemaining
+    $fullCharge = $fullChargeObj.FullChargedCapacity
+    $designCap = $staticData.DesignedCapacity
+    $batteryHealth = 0
+    if ($designCap -gt 0) {
+        $batteryHealth = [math]::Round(($fullCharge * 100) / $designCap, 1)
     }
 
     $voltage = "N/A"
@@ -57,14 +69,14 @@ while ($true) {
         $voltage = ([math]::Round($battInfo.Voltage / 1000, 2)).ToString() + " V"
     }
 
-    $batteryPercent = $battery.EstimatedChargeRemaining
-
     if ($battInfo.PowerOnline) {
-        $rate = Get-BatteryRate -RateType "Charge"
-        Write-Host "Status: Charging | Charging Rate: $rate | Voltage: $voltage | Battery: $batteryPercent%"
+        $watts = Get-BatteryRate -RateType "Charge"
+        Write-Host "Status: Charging | Charging Rate: $watts | Voltage: $voltage | Battery: $batteryPercent% 
+Design Capacity: $([math]::Round($designCap / 1000, 2)) Wh | Current Charge Capacity: $([math]::Round($fullCharge / 1000, 2)) Wh | Health: $batteryHealth%"
     } else {
-        $rate = Get-BatteryRate -RateType "Discharge"
-        Write-Host "Status: On Battery | Discharging Rate: $rate | Voltage: $voltage | Battery: $batteryPercent%"
+        $watts = Get-BatteryRate -RateType "Discharge"
+        Write-Host "Status: On Battery | Discharging Rate: $watts | Voltage: $voltage | Battery: $batteryPercent% 
+Design Capacity: $([math]::Round($designCap / 1000, 2)) Wh | Current Charge Capacity: $([math]::Round($fullCharge / 1000, 2)) Wh | Health: $batteryHealth%"
     }
 
     Start-Sleep -Seconds 5
