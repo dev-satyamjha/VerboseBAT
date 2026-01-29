@@ -27,6 +27,7 @@ function Get-BatteryRate {
             $counter = Get-Counter -Counter $perfCounterPath -ErrorAction SilentlyContinue
             if ($counter) {
                 $newRate = $counter.CounterSamples | Select-Object -ExpandProperty CookedValue
+                # Only use the performance counter value if it's significantly higher than 500
                 if ($newRate -gt 500) {
                     $rateValue = $newRate
                     $source = "Perf Counter"
@@ -36,7 +37,6 @@ function Get-BatteryRate {
 
         }
     }
-
     if ($rateValue -gt 0) {
         return ([math]::Round($rateValue / 1000, 2)).ToString() + " W ($source)"
     } else {
@@ -44,18 +44,17 @@ function Get-BatteryRate {
     }
 }
 
+
 while ($true) {
     $battery = Get-WmiObject -Class Win32_Battery -ErrorAction SilentlyContinue
     $battInfo = Get-WmiObject -Namespace "root\wmi" -Class "BatteryStatus" -ErrorAction SilentlyContinue
     $fullChargeObj = Get-WmiObject -Namespace "root\wmi" -Class "BatteryFullChargedCapacity" -ErrorAction SilentlyContinue
     $staticData = Get-WmiObject -Namespace "root\wmi" -Class "BatteryStaticData" -ErrorAction SilentlyContinue
-
     if (-not $battInfo -or -not $fullChargeObj -or -not $staticData) {
         Write-Host "Battery WMI data not fully available. Please check battery status."
         Start-Sleep -Seconds 5
-        continue
+        continue # Skip to next iteration if essential WMI data is missing
     }
-
     $batteryPercent = $battery.EstimatedChargeRemaining
     $fullCharge = $fullChargeObj.FullChargedCapacity
     $designCap = $staticData.DesignedCapacity
@@ -63,21 +62,27 @@ while ($true) {
     if ($designCap -gt 0) {
         $batteryHealth = [math]::Round(($fullCharge * 100) / $designCap, 1)
     }
-
+    $cycleCount = "N/A" # Default to N/A
+    try {
+        $batteryCycleCountObj = Get-WmiObject -Namespace "root\wmi" -Class "BatteryCycleCount" -ErrorAction Stop
+        if ($batteryCycleCountObj) {
+            $cycleCount = $batteryCycleCountObj.CycleCount
+        }
+    } catch {
+        $cycleCount = "Not available via WMI"
+    }
     $voltage = "N/A"
     if ($battInfo.Voltage -gt 0) {
         $voltage = ([math]::Round($battInfo.Voltage / 1000, 2)).ToString() + " V"
     }
-
     if ($battInfo.PowerOnline) {
         $watts = Get-BatteryRate -RateType "Charge"
-        Write-Host "Status: Charging | Charging Rate: $watts | Voltage: $voltage | Battery: $batteryPercent% 
-Design Capacity: $([math]::Round($designCap / 1000, 2)) Wh | Current Charge Capacity: $([math]::Round($fullCharge / 1000, 2)) Wh | Health: $batteryHealth%"
+        Write-Host "Status: Plugged | Charging Rate: $watts | Voltage: $voltage | Battery: $batteryPercent% 
+Design Capacity: $([math]::Round($designCap / 1000, 2)) Wh | Current Charge Capacity: $([math]::Round($fullCharge / 1000, 2)) Wh | Health: $batteryHealth% | Cycles: $cycleCount"
     } else {
         $watts = Get-BatteryRate -RateType "Discharge"
-        Write-Host "Status: On Battery | Discharging Rate: $watts | Voltage: $voltage | Battery: $batteryPercent% 
-Design Capacity: $([math]::Round($designCap / 1000, 2)) Wh | Current Charge Capacity: $([math]::Round($fullCharge / 1000, 2)) Wh | Health: $batteryHealth%"
+        Write-Host "Status: On Power | Discharging Rate: $watts | Voltage: $voltage | Battery: $batteryPercent% 
+Design Capacity: $([math]::Round($designCap / 1000, 2)) Wh | Current Charge Capacity: $([math]::Round($fullCharge / 1000, 2)) Wh | Health: $batteryHealth% | Cycles: $cycleCount"
     }
-
     Start-Sleep -Seconds 5
 }
